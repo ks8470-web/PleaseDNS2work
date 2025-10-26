@@ -51,9 +51,9 @@ input_string = 'AlwaysWatching'
 encrypted_value = encrypt_with_aes(input_string, password, salt) # exfil function
 decrypted_value = decrypt_with_aes(encrypted_value, password, salt)  # exfil function
 
-# CRITICAL: The encrypted value from Fernet is already base64-encoded bytes
-# We need to decode it to a string for DNS TXT storage
-# The test will encode it back to bytes when retrieving
+# CRITICAL: The encrypted value from Fernet is already base64-encoded bytes. Keep
+# the raw bytes for DNS TXT storage so the token survives a round-trip unchanged.
+encrypted_token_bytes = encrypted_value
 encrypted_token_str = encrypted_value.decode('ascii')
 
 # For future use    
@@ -95,7 +95,7 @@ dns_records = {
     },
     'nyu.edu.': {
         dns.rdatatype.A: '192.168.1.106',
-        dns.rdatatype.TXT: (encrypted_token_str,),
+    dns.rdatatype.TXT: (encrypted_token_bytes,),
         dns.rdatatype.MX: [(10, 'mxa-00256a01.gslb.pphosted.com.')],
         dns.rdatatype.AAAA: '2001:0db8:85a3:0000:0000:8a2e:0373:7312',
         dns.rdatatype.NS: 'ns1.nyu.edu.',
@@ -143,9 +143,12 @@ def run_dns_server():
                     # (like Fernet output decoded to ASCII) are preserved as a single string.
                     if qtype == dns.rdatatype.TXT:
                         # answer_data is expected to be a tuple of strings; convert each to raw bytes
-                        data_items = answer_data if not isinstance(answer_data, str) else (answer_data,)
+                        data_items = answer_data if isinstance(answer_data, (list, tuple)) else (answer_data,)
                         for item in data_items:
-                            item_bytes = item.encode('utf-8')
+                            if isinstance(item, bytes):
+                                item_bytes = item
+                            else:
+                                item_bytes = str(item).encode('utf-8')
                             rdata_list.append(TXT(dns.rdataclass.IN, dns.rdatatype.TXT, [item_bytes]))
                     else:
                         if isinstance(answer_data, str):
